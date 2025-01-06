@@ -1,0 +1,2 @@
+
+    history = [w]
