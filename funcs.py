@@ -1,84 +1,50 @@
-def transition_probability(w, s1, s2, P_A, P_D, W):
-    """
-    计算状态转移概率 P(w' | w, s1, s2)
-    """
-    if s1 == "high":
-        attack_success_rate = P_A[1]
-    else:
-        attack_success_rate = P_A[0]
+import numpy as np
+from config import *
 
-    if s2 == "high":
-        detection_rate = P_D[1]
-    else:
-        detection_rate = P_D[0]
+# 成本函数
+def cost_function(w):
+    """计算被攻陷节点的成本"""
+    return alpha * (np.exp(beta * w) - 1)
 
-    # 状态转移概率
-    if w == 0:  # 最小状态
-        return [1 - detection_rate, detection_rate]  # [保持, 增加]
-    elif w == W:  # 最大状态
-        return [detection_rate, 1 - detection_rate]  # [减少, 保持]
-    else:
-        return [detection_rate / 2, 1 - detection_rate - attack_success_rate, attack_success_rate / 2]  # [减少, 保持, 增加]
-    
-def cost_intruder(s1, alpha_A):
-    """
-    入侵者的攻击成本
-    """
-    return alpha_A * (1 if s1 == "high" else 0.5)
+# 状态转移概率
+def state_transition_prob(w, s1, s2, p):
+    """计算状态转移概率"""
+    prob = np.zeros(W + 1)
+    if w > 0:
+        prob[w - 1] = (w / W) * p  # 恢复一个节点的概率
+    prob[w] = (w / W) * (1 - p) + ((W - w) / W) * p  # 状态不变的概率
+    if w < W:
+        prob[w + 1] = ((W - w) / W) * (1 - p)  # 攻陷一个节点的概率
+    return prob
 
-def cost_ids(s2, alpha_D):
-    """
-    IDS 的检测成本
-    """
-    return alpha_D * (1 if s2 == "high" else 0.5)
+# 生成状态转移矩阵
+def generate_transition_matrix(s1, s2, p):
+    """生成状态转移矩阵"""
+    transition_matrix = np.zeros((W + 1, W + 1))
+    for w in range(W + 1):
+        transition_matrix[w] = state_transition_prob(w, s1, s2, p)
+    return transition_matrix
 
-def reward_intruder(w, beta_A, attack_success_rate):
-    """
-    入侵者的攻击收益
-    """
-    return beta_A * w * attack_success_rate
+# 玩家即时成本函数
+def immediate_cost(w, s1, s2):
+    """计算即时成本"""
+    attacker_cost = -cost_function(w) + (C1_H if s1 == s1_high else C1_L)
+    ids_cost = cost_function(w) + (C2_H if s2 == s2_high else C2_L)
+    return attacker_cost, ids_cost
 
-def reward_ids(w, beta_D, detection_rate):
-    """
-    IDS 的损失减少
-    """
-    return beta_D * w * detection_rate
+# 总成本计算
+def compute_total_cost(transition_matrix, initial_state, iterations=100):
+    """计算总成本"""
+    state = initial_state
+    total_attacker_cost = 0
+    total_ids_cost = 0
 
-def utility_intruder(w, s1, s2, alpha_A, beta_A, attack_success_rate):
-    """
-    入侵者的支付函数 U_1
-    """
-    return -cost_intruder(s1, alpha_A) + reward_intruder(w, beta_A, attack_success_rate)
+    for t in range(iterations):
+        attacker_cost, ids_cost = immediate_cost(state, s1, s2)
+        total_attacker_cost += (delta ** t) * attacker_cost
+        total_ids_cost += (delta ** t) * ids_cost
 
-def utility_ids(w, s1, s2, alpha_D, beta_D, detection_rate):
-    """
-    IDS 的支付函数 U_2
-    """
-    return -cost_ids(s2, alpha_D) - reward_ids(w, beta_D, detection_rate)
+        # 随机转移到下一状态
+        state = np.random.choice(range(W + 1), p=transition_matrix[state])
 
-def robust_value_iteration(W, delta, P_A, P_D, alpha_D, beta_D, alpha_A, beta_A, iterations=100):
-    """
-    鲁棒动态规划求解 V(w)
-    """
-    V = [0] * (W + 1)  # 初始化 V(w)
-
-    for _ in range(iterations):
-        new_V = [0] * (W + 1)
-        for w in range(W + 1):
-            max_utility = float('-inf')  # 对于 IDS，取最大值
-            for s2 in ["low", "high"]:
-                min_utility = float('inf')  # 对于入侵者，取最小值
-                for s1 in ["low", "high"]:
-                    # 获取转移概率
-                    probs = transition_probability(w, s1, s2, P_A, P_D, W)
-                    # 计算支付
-                    utility = utility_ids(w, s1, s2, alpha_D, beta_D, P_D[1])
-                    # 加入未来价值的期望
-                    expected_value = sum(p * V[w_next] for p, w_next in zip(probs, [w - 1, w, w + 1]))
-                    total_utility = utility + delta * expected_value
-                    min_utility = min(min_utility, total_utility)
-                max_utility = max(max_utility, min_utility)
-            new_V[w] = max_utility
-        V = new_V  # 更新价值函数
-
-    return V
+    return total_attacker_cost, total_ids_cost
