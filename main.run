@@ -1,6 +1,6 @@
 reset;
-model a.mod;
-data a.dat;
+model model.mod;
+data data.dat;
 option solver ipopt;
 solve;
-display sigma value;
+display sigma,value;
