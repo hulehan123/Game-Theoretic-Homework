@@ -1,0 +1,6 @@
+reset;
+model a.mod;
+data a.dat;
+option solver ipopt;
+solve;
+display sigma value;
